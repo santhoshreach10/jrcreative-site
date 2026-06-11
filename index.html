@@ -1,0 +1,104 @@
+// WhatsApp delivery via Meta WhatsApp Cloud API.
+// Sends each budget tier as an individual image message with the basic specs
+// as the caption. Requires a WhatsApp Business (Meta) setup.
+//
+// Env vars needed:
+//   WHATSAPP_API_TOKEN       - permanent/system-user access token
+//   WHATSAPP_PHONE_NUMBER_ID - the sender phone number ID
+//
+// Note: outside of an approved template/session window, free-form messages are
+// only delivered within 24h of the user messaging your number first. For a
+// cold lead funnel you typically send an approved template. This module sends
+// session-style image messages, which is what you want once the lead opts in.
+
+const GRAPH = "https://graph.facebook.com/v21.0";
+
+// Basic specs per tier (matches the on-site comparison).
+export const TIER_SPECS = {
+  base: {
+    title: "BASIC — Budget Friendly",
+    specs: [
+      "Simple & Functional Design",
+      "Basic Materials & Finishes",
+      "Limited Storage",
+      "Affordable & Practical",
+    ],
+  },
+  essential: {
+    title: "ESSENTIAL — Value for Money",
+    specs: [
+      "Modern & Stylish Design",
+      "Quality Materials & Accessories",
+      "Optimized Storage Solutions",
+      "Perfect Balance of Style & Budget",
+    ],
+  },
+  premium: {
+    title: "PREMIUM — Luxury Without Compromise",
+    specs: [
+      "Bespoke & Luxurious Design",
+      "Premium Materials & High-end Finishes",
+      "Advanced Storage & Smart Solutions",
+      "Timeless Elegance & Superior Quality",
+    ],
+  },
+};
+
+async function sendMessage(payload, cfg) {
+  const res = await fetch(`${GRAPH}/${cfg.phoneNumberId}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${cfg.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ messaging_product: "whatsapp", ...payload }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`WhatsApp API ${res.status}: ${detail.slice(0, 250)}`);
+  }
+  return res.json();
+}
+
+/**
+ * Send the design package: an intro text + one image-with-specs message per tier.
+ * @param {string} phone E.164 phone, e.g. +919876543210
+ * @param {object} images { base, essential, premium } -> public image URLs
+ * @param {object} cfg { token, phoneNumberId }
+ */
+export async function sendDesignPackage(phone, images, cfg) {
+  if (!cfg.token || !cfg.phoneNumberId) {
+    throw new Error("WhatsApp not configured (WHATSAPP_API_TOKEN / WHATSAPP_PHONE_NUMBER_ID)");
+  }
+  const to = String(phone).replace(/[^\d+]/g, "");
+  const results = [];
+
+  // Intro message
+  await sendMessage(
+    {
+      to,
+      type: "text",
+      text: {
+        body:
+          "Thanks for your interest! 🏠 Here are your 3 interior design options — Basic, Essential and Premium. " +
+          "Each image below includes its key specifications. Reply to this chat for full pricing & material lists.",
+      },
+    },
+    cfg
+  );
+
+  // One image message per tier, specs in the caption
+  for (const tier of ["base", "essential", "premium"]) {
+    const url = images[tier];
+    if (!url) continue;
+    const info = TIER_SPECS[tier];
+    const caption = `*${info.title}*\n` + info.specs.map((s) => `• ${s}`).join("\n");
+    const r = await sendMessage(
+      { to, type: "image", image: { link: url, caption } },
+      cfg
+    );
+    results.push({ tier, id: r.messages?.[0]?.id });
+  }
+
+  return { sent: results.length, messages: results };
+}
