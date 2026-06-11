@@ -69,7 +69,7 @@ export async function generateTierFromImage(roomType, tier, imageBuffer, apiKey)
   form.append("prompt", prompt);
   form.append("size", EDIT_SIZE);
   form.append("quality", QUALITY);
-  form.append("image", new Blob([imageBuffer], { type: "image/png" }), "room.png");
+  form.append("image", new Blob([imageBuffer], { type: "image/jpeg" }), "room.jpg");
 
   const res = await fetch(OPENAI_EDIT_URL, {
     method: "POST",
